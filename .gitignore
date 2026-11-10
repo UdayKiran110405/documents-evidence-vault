@@ -1,0 +1,61 @@
+﻿# Environment variables and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Java and Maven
+target/
+*.class
+
+# Node.js and React
+node_modules/
+dist/
+build/
+.vite/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.iml
+
+# Operating system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+
+# Local test and recovery output files
+downloaded-sample.txt
+dr-recovery-test-*.txt
+metadata-test.txt
+recovered-document.txt
+s3-integration-test-*.txt
+sample.txt
+sample2.txt
+version-metadata-test*.txt
+
+# Generated manifests
+verifier/manifests/*.json
+
+# Local source dumps
+all_code.txt
