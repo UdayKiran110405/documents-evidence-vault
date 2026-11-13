@@ -1,0 +1,271 @@
+
+.navbar {
+    height: 78px;
+    width: 100%;
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    padding: 0 5%;
+
+    position: sticky;
+    top: 0;
+    z-index: 100;
+
+    background: var(--navbar-bg);
+    backdrop-filter: blur(18px);
+
+    border-bottom: 1px solid var(--border-color);
+}
+
+.navbar-brand {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    flex-shrink: 0;
+}
+
+.brand-icon {
+    width: 42px;
+    height: 42px;
+
+    display: grid;
+    place-items: center;
+
+    color: var(--accent);
+    background: rgba(56, 189, 248, 0.12);
+
+    border: 1px solid rgba(56, 189, 248, 0.25);
+    border-radius: 12px;
+}
+
+.brand-details {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.brand-name {
+    font-size: 17px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+}
+
+.brand-subtitle {
+    font-size: 8px;
+    letter-spacing: 1.5px;
+    color: var(--text-muted);
+}
+
+.navbar-links {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.nav-link {
+    position: relative;
+
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    padding: 12px 13px;
+
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+
+    border-radius: 8px;
+    transition: 0.25s ease;
+}
+
+.nav-link:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+
+.nav-link.active {
+    color: var(--accent);
+    background: rgba(56, 189, 248, 0.08);
+}
+
+/* Glowing tube-light active indicator */
+.nav-link.active::after {
+    content: '';
+
+    position: absolute;
+    bottom: -12px;
+    left: 20%;
+    width: 60%;
+    height: 3px;
+
+    border-radius: 10px;
+
+    background: var(--accent);
+
+    box-shadow:
+        0 0 5px var(--accent),
+        0 0 12px var(--accent-glow),
+        0 0 22px var(--accent-glow);
+}
+
+.navbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.theme-toggle {
+    width: 39px;
+    height: 39px;
+
+    display: grid;
+    place-items: center;
+
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+
+    background: var(--bg-card);
+    color: var(--text-primary);
+
+    transition: 0.2s ease;
+}
+
+.theme-toggle:hover {
+    color: var(--accent);
+    border-color: var(--accent);
+    box-shadow: 0 0 12px var(--accent-glow);
+}
+
+.login-button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    padding: 11px 17px;
+
+    border-radius: 9px;
+
+    background: var(--accent-strong);
+    color: #ffffff;
+
+    font-size: 13px;
+    font-weight: 600;
+
+    transition: 0.2s ease;
+}
+
+.login-button:hover {
+    box-shadow: 0 0 16px var(--accent-glow);
+    transform: translateY(-1px);
+}
+
+@media (max-width: 1050px) {
+    .navbar {
+        padding: 0 2%;
+    }
+
+    .navbar-links {
+        gap: 1px;
+    }
+
+    .nav-link {
+        padding: 10px 8px;
+    }
+}
+
+@media (max-width: 760px) {
+    .navbar {
+        height: auto;
+        min-height: 75px;
+        flex-wrap: wrap;
+        gap: 12px;
+        padding: 12px 4%;
+    }
+
+    .navbar-links {
+        order: 3;
+        width: 100%;
+        overflow-x: auto;
+        padding-bottom: 7px;
+    }
+
+    .nav-link {
+        flex-shrink: 0;
+    }
+
+    .nav-link.active::after {
+        bottom: -5px;
+    }
+}
+
+.user-session {
+    display: flex;
+    align-items: center;
+    gap: 13px;
+}
+
+.user-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    color: var(--accent);
+}
+
+.user-details {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.user-details span {
+    color: var(--text-primary);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.user-details small {
+    color: var(--text-muted);
+    font-size: 10px;
+}
+
+.logout-button {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+
+    padding: 10px 12px;
+
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+
+    background: var(--bg-card);
+    color: var(--text-secondary);
+
+    font-size: 12px;
+    font-weight: 600;
+
+    transition: 0.2s ease;
+}
+
+.logout-button:hover {
+    color: var(--danger);
+    border-color: var(--danger);
+}
+
+@media (max-width: 760px) {
+    .user-details {
+        display: none;
+    }
+
+    .user-session {
+        gap: 7px;
+    }
+
+    .logout-button span {
+        display: none;
+    }
+}

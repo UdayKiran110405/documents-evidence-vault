@@ -19,4 +19,9 @@ public interface DocumentVersionRepository
     List<DocumentVersion> findByDocumentIdOrderByCreatedAtDesc(
             Long documentId
     );
+
+
+    List<DocumentVersion> findByDocumentIdOrderByIdDesc(Long documentId);
+
+
 }

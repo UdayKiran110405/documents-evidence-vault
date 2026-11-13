@@ -18,6 +18,12 @@ public class AuditController {
         this.auditService = auditService;
     }
 
+    @GetMapping
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_AUDITOR')")
+    public List<AuditLog> getAllAuditLogs() {
+        return auditService.getAllLogs();
+    }
+
     @GetMapping("/documents/{documentId}")
     @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_AUDITOR')")
     public List<AuditLog> getDocumentHistory(

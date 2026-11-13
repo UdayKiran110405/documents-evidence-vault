@@ -1,0 +1,54 @@
+
+:root {
+    font-family: Inter, system-ui, -apple-system, sans-serif;
+
+    --accent: #38bdf8;
+    --accent-strong: #0ea5e9;
+    --accent-glow: rgba(56, 189, 248, 0.55);
+
+    --success: #22c55e;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+}
+
+:root[data-theme="dark"] {
+    --bg-primary: #080d18;
+    --bg-secondary: #101827;
+    --bg-card: #141f30;
+    --bg-hover: #1d2a3e;
+
+    --text-primary: #f1f5f9;
+    --text-secondary: #a1afc1;
+    --text-muted: #718096;
+
+    --border-color: #263449;
+    --navbar-bg: rgba(8, 13, 24, 0.92);
+
+    /* Compatibility variables used by page styles */
+    --surface: var(--bg-card);
+    --surface-subtle: var(--bg-secondary);
+    --surface-hover: var(--bg-hover);
+
+    color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+    --bg-primary: #f5f8fc;
+    --bg-secondary: #ffffff;
+    --bg-card: #ffffff;
+    --bg-hover: #edf4fb;
+
+    --text-primary: #152238;
+    --text-secondary: #53647a;
+    --text-muted: #8190a3;
+
+    --border-color: #dce5ef;
+    --navbar-bg: rgba(255, 255, 255, 0.92);
+
+    /* Compatibility variables used by page styles */
+    --surface: var(--bg-card);
+    --surface-subtle: var(--bg-secondary);
+    --surface-hover: var(--bg-hover);
+
+    color-scheme: light;
+}

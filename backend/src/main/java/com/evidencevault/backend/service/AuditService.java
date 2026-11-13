@@ -35,4 +35,9 @@ public class AuditService {
         return auditLogRepository
                 .findByDocumentIdOrderByCreatedAtDesc(documentId);
     }
+    @Transactional(readOnly = true)
+    public List<AuditLog> getAllLogs() {
+        return auditLogRepository.findAllByOrderByCreatedAtDesc();
+    }
+
 }

@@ -15,8 +15,8 @@ def simulate_primary_corruption(document_id: int):
     if not document:
         raise ValueError("Document not found")
 
-    if document["status"] != "ACTIVE":
-        raise ValueError("Only ACTIVE documents can be tested")
+    if document["status"] not in ("ACTIVE", "CORRUPTED"):
+        raise ValueError("Only ACTIVE or CORRUPTED documents can be tested")
 
     storage_key = document["storage_key"]
     expected_checksum = document["sha256_checksum"]

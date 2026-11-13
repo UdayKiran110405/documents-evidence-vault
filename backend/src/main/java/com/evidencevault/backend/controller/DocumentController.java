@@ -29,7 +29,13 @@ import java.nio.charset.StandardCharsets;
 import com.evidencevault.backend.storage.StoredObjectVersion;
 import java.util.List;
 
+import com.evidencevault.backend.dto.DocumentVersionResponse;
 
+import com.evidencevault.backend.dto.VersionReconciliationResponse;
+
+import com.evidencevault.backend.dto.VersionIntegrityResponse;
+import org.springframework.web.server.ResponseStatusException;
+import java.util.Locale;
 
 import java.io.IOException;
 
@@ -52,7 +58,7 @@ public class DocumentController {
 
             @RequestParam("file") MultipartFile file,
 
-            @RequestParam("category") DocumentCategory category,
+            @RequestParam("category") String  category,
 
             @RequestParam(
                     value = "description",
@@ -64,7 +70,7 @@ public class DocumentController {
 
         DocumentResponse response = documentService.upload(
                 file,
-                category,
+                parseCategory(category, true),
                 description,
                 jwt.getSubject()
         );
@@ -80,7 +86,7 @@ public class DocumentController {
 
             @RequestParam(required = false) String keyword,
 
-            @RequestParam(required = false) DocumentCategory category,
+            @RequestParam(required = false) String category,
 
             @RequestParam(required = false) DocumentStatus status,
 
@@ -99,16 +105,65 @@ public class DocumentController {
         return ResponseEntity.ok(
                 documentService.searchDocuments(
                         keyword,
-                        category,
+                        parseCategory(category, false),
                         status,
                         pageable
                 )
         );
     }
 
+
+    // Preview a document inside the browser.
+    @GetMapping("/{id}/preview")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_ADMIN', 'ROLE_OPERATOR', 'ROLE_AUDITOR')"
+    )
+    public ResponseEntity<org.springframework.core.io.Resource>
+    previewDocument(
+            @PathVariable Long id,
+            @AuthenticationPrincipal Jwt jwt
+    ) throws IOException {
+
+        DocumentDownload preview = documentService.preview(
+                id,
+                jwt.getSubject()
+        );
+
+        ContentDisposition disposition = ContentDisposition
+                .inline()
+                .filename(
+                        preview.filename(),
+                        StandardCharsets.UTF_8
+                )
+                .build();
+
+        return ResponseEntity.ok()
+                .contentType(
+                        MediaType.parseMediaType(
+                                preview.contentType()
+                        )
+                )
+                .header(
+                        HttpHeaders.CONTENT_DISPOSITION,
+                        disposition.toString()
+                )
+                .header(
+                        HttpHeaders.CACHE_CONTROL,
+                        "private, no-store, no-cache, must-revalidate, max-age=0"
+                )
+                .header("Pragma", "no-cache")
+                .header("X-Content-Type-Options", "nosniff")
+                .body(preview.resource());
+    }
+
+
+    // Download a document as an attachment.
     @GetMapping("/{id}/download")
-    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_OPERATOR', 'ROLE_AUDITOR')")
-    public ResponseEntity<org.springframework.core.io.Resource> downloadDocument(
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_ADMIN', 'ROLE_OPERATOR', 'ROLE_AUDITOR')"
+    )
+    public ResponseEntity<org.springframework.core.io.Resource>
+    downloadDocument(
             @PathVariable Long id,
             @AuthenticationPrincipal Jwt jwt
     ) throws IOException {
@@ -120,19 +175,31 @@ public class DocumentController {
 
         ContentDisposition disposition = ContentDisposition
                 .attachment()
-                .filename(download.filename(), StandardCharsets.UTF_8)
+                .filename(
+                        download.filename(),
+                        StandardCharsets.UTF_8
+                )
                 .build();
 
         return ResponseEntity.ok()
                 .contentType(
-                        MediaType.parseMediaType(download.contentType())
+                        MediaType.parseMediaType(
+                                download.contentType()
+                        )
                 )
                 .header(
                         HttpHeaders.CONTENT_DISPOSITION,
                         disposition.toString()
                 )
+                .header(
+                        HttpHeaders.CACHE_CONTROL,
+                        "private, no-store, no-cache, must-revalidate, max-age=0"
+                )
+                .header("Pragma", "no-cache")
+                .header("X-Content-Type-Options", "nosniff")
                 .body(download.resource());
     }
+
 
 
     @DeleteMapping("/{id}")
@@ -171,6 +238,36 @@ public class DocumentController {
                 documentService.getDocumentVersions(id)
         );
     }
+
+
+    @GetMapping("/{id}/version-history")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_ADMIN', 'ROLE_OPERATOR', 'ROLE_AUDITOR')"
+    )
+    public ResponseEntity<List<DocumentVersionResponse>>
+    getDocumentVersionHistory(@PathVariable Long id) {
+
+        return ResponseEntity.ok(
+                documentService.getDocumentVersionHistory(id)
+        );
+    }
+
+    // CHAPTER 6: S3-MYSQL VERSION RECONCILIATION
+
+    @GetMapping("/{id}/version-reconciliation")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_ADMIN', 'ROLE_OPERATOR', 'ROLE_AUDITOR')"
+    )
+    public ResponseEntity<VersionReconciliationResponse>
+    reconcileDocumentVersions(
+            @PathVariable Long id) {
+
+        return ResponseEntity.ok(
+                documentService.reconcileDocumentVersions(id)
+        );
+    }
+
+
 
     // CHAPTER 5: DOWNLOAD A HISTORICAL VERSION
 
@@ -260,6 +357,72 @@ public class DocumentController {
                 );
 
         return ResponseEntity.ok(response);
+    }
+
+
+// CHAPTER 7: HISTORICAL VERSION INTEGRITY VERIFICATION
+
+    @GetMapping("/{id}/version-integrity")
+    @PreAuthorize(
+            "hasAnyAuthority('ROLE_ADMIN', 'ROLE_OPERATOR', 'ROLE_AUDITOR')"
+    )
+    public ResponseEntity<VersionIntegrityResponse>
+    verifyHistoricalVersionIntegrity(
+            @PathVariable Long id) {
+
+        return ResponseEntity.ok(
+                documentService.verifyHistoricalVersionIntegrity(id)
+        );
+    }
+
+    @PostMapping("/seed-demo")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_OPERATOR')")
+    public ResponseEntity<List<DocumentResponse>> seedDemoDocuments(
+            @AuthenticationPrincipal Jwt jwt) throws IOException {
+        return ResponseEntity
+                .status(HttpStatus.CREATED)
+                .body(documentService.seedSyntheticComplianceData(jwt.getSubject()));
+    }
+
+    private DocumentCategory parseCategory(
+            String category,
+            boolean required
+    ) {
+        if (category == null || category.isBlank()) {
+            if (required) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "Please select a document category before uploading."
+                );
+            }
+
+            return null;
+        }
+
+        try {
+            return DocumentCategory.valueOf(
+                    category.trim().toUpperCase(Locale.ROOT)
+            );
+
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "The selected category is not supported. "
+                            + "Please choose General, Contract, Invoice, "
+                            + "Legal, Financial, or Other."
+            );
+        }
+    }
+
+    @PostMapping("/{id}/simulate-corruption")
+    @PreAuthorize("hasAnyAuthority('ROLE_ADMIN', 'ROLE_OPERATOR')")
+    public ResponseEntity<DocumentResponse> simulateDocumentCorruption(
+            @PathVariable Long id,
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        return ResponseEntity.ok(
+                documentService.simulateCorruption(id, jwt.getSubject())
+        );
     }
 
 

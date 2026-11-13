@@ -1,4 +1,3 @@
-
 import json
 import os
 from pathlib import Path
@@ -7,17 +6,9 @@ import mysql.connector
 import snowflake.connector
 from dotenv import load_dotenv
 
-# -------------------------------------------------
-# 1. LOAD PROJECT ENVIRONMENT VARIABLES
-# -------------------------------------------------
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(PROJECT_ROOT / ".env")
 
-
-# -------------------------------------------------
-# 2. MYSQL CONNECTION
-# -------------------------------------------------
 
 def get_mysql_connection():
     return mysql.connector.connect(
@@ -29,12 +20,7 @@ def get_mysql_connection():
     )
 
 
-# -------------------------------------------------
-# 3. SNOWFLAKE CONNECTION
-# -------------------------------------------------
-
 def get_snowflake_connection():
-
     required = [
         "SNOWFLAKE_ACCOUNT",
         "SNOWFLAKE_USER",
@@ -43,16 +29,10 @@ def get_snowflake_connection():
         "SNOWFLAKE_DATABASE",
         "SNOWFLAKE_SCHEMA"
     ]
-
-    missing = [
-        key for key in required
-        if not os.getenv(key)
-    ]
-
+    missing = [key for key in required if not os.getenv(key)]
     if missing:
         raise ValueError(
-            "Missing Snowflake environment variables: "
-            + ", ".join(missing)
+            "Missing Snowflake environment variables: " + ", ".join(missing)
         )
 
     return snowflake.connector.connect(
@@ -66,15 +46,36 @@ def get_snowflake_connection():
     )
 
 
-# -------------------------------------------------
-# 4. EXTRACT DATA FROM MYSQL
-# -------------------------------------------------
-
 def extract_mysql_data():
-
     connection = get_mysql_connection()
 
     queries = {
+        "DOCUMENTS": """
+            SELECT
+                id,
+                original_filename,
+                storage_key,
+                content_type,
+                file_size_bytes,
+                sha256_checksum,
+                category,
+                status,
+                created_at,
+                updated_at
+            FROM documents
+            ORDER BY id
+        """,
+        "AUDIT_LOGS": """
+            SELECT
+                id,
+                username,
+                action,
+                document_id,
+                details,
+                created_at
+            FROM audit_logs
+            ORDER BY id
+        """,
         "DR_DRILLS": """
             SELECT
                 id,
@@ -95,7 +96,6 @@ def extract_mysql_data():
             FROM dr_drills
             ORDER BY id
         """,
-
         "DR_RECOVERY_MANIFESTS": """
             SELECT
                 id,
@@ -118,7 +118,6 @@ def extract_mysql_data():
             FROM dr_recovery_manifests
             ORDER BY id
         """,
-
         "DR_METRICS": """
             SELECT
                 id,
@@ -136,31 +135,17 @@ def extract_mysql_data():
     }
 
     extracted = {}
-
     try:
         cursor = connection.cursor(dictionary=True)
-
         for table_name, query in queries.items():
             cursor.execute(query)
             extracted[table_name] = cursor.fetchall()
-
-            print(
-                f"Extracted {len(extracted[table_name])} "
-                f"rows from MySQL table {table_name}"
-            )
-
         return extracted
-
     finally:
         connection.close()
 
 
-# -------------------------------------------------
-# 5. PREPARE DATA FOR SNOWFLAKE
-# -------------------------------------------------
-
 def prepare_value(column, value):
-
     if column in (
         "primary_verified",
         "secondary_verified",
@@ -170,23 +155,36 @@ def prepare_value(column, value):
         return None if value is None else bool(value)
 
     if column == "manifest_json" and value is not None:
-
         if isinstance(value, (dict, list)):
             return json.dumps(value)
-
         if isinstance(value, bytes):
             return value.decode("utf-8")
-
         return str(value)
 
     return value
 
 
-# -------------------------------------------------
-# 6. LOAD DATA INTO SNOWFLAKE
-# -------------------------------------------------
-
 TABLE_COLUMNS = {
+    "DOCUMENTS": [
+        "id",
+        "original_filename",
+        "storage_key",
+        "content_type",
+        "file_size_bytes",
+        "sha256_checksum",
+        "category",
+        "status",
+        "created_at",
+        "updated_at"
+    ],
+    "AUDIT_LOGS": [
+        "id",
+        "username",
+        "action",
+        "document_id",
+        "details",
+        "created_at"
+    ],
     "DR_DRILLS": [
         "id",
         "document_id",
@@ -204,7 +202,6 @@ TABLE_COLUMNS = {
         "recovery_source",
         "created_at"
     ],
-
     "DR_RECOVERY_MANIFESTS": [
         "id",
         "manifest_id",
@@ -224,7 +221,6 @@ TABLE_COLUMNS = {
         "manifest_json",
         "created_at"
     ],
-
     "DR_METRICS": [
         "id",
         "document_id",
@@ -239,36 +235,22 @@ TABLE_COLUMNS = {
 }
 
 
-
 def load_into_snowflake(extracted):
-
     connection = get_snowflake_connection()
-
     try:
         cursor = connection.cursor()
-
         cursor.execute("BEGIN")
 
         for table_name, columns in TABLE_COLUMNS.items():
-
-            rows = extracted[table_name]
-
-            cursor.execute(
-                f"DELETE FROM {table_name}"
-            )
+            rows = extracted.get(table_name, [])
+            cursor.execute(f"DELETE FROM {table_name}")
 
             if not rows:
-                print(f"No records available for {table_name}")
                 continue
 
-            column_sql = ", ".join(
-                column.upper() for column in columns
-            )
-
+            column_sql = ", ".join(column.upper() for column in columns)
             value_sql = ", ".join(
-                "PARSE_JSON(%s)"
-                if column == "manifest_json"
-                else "%s"
+                "PARSE_JSON(%s)" if column == "manifest_json" else "%s"
                 for column in columns
             )
 
@@ -277,76 +259,26 @@ def load_into_snowflake(extracted):
                 SELECT {value_sql}
             """
 
-            values = [
-                tuple(
+            for row in rows:
+                row_values = tuple(
                     prepare_value(column, row.get(column))
                     for column in columns
                 )
-                for row in rows
-            ]
-
-            for row_values in values:
                 cursor.execute(insert_sql, row_values)
 
-            print(
-                f"Loaded {len(values)} rows into "
-                f"Snowflake table {table_name}"
-            )
-
         connection.commit()
-
-        print("\nSnowflake data load completed successfully.")
-
     except Exception:
         connection.rollback()
-        print("Snowflake load failed. Transaction rolled back.")
         raise
-
     finally:
         connection.close()
 
-# -------------------------------------------------
-# 7. VERIFY SNOWFLAKE ROW COUNTS
-# -------------------------------------------------
-
-def verify_snowflake_data():
-
-    connection = get_snowflake_connection()
-
-    try:
-        cursor = connection.cursor()
-
-        print("\nSNOWFLAKE TABLE COUNTS")
-
-        for table_name in TABLE_COLUMNS:
-
-            cursor.execute(
-                f"SELECT COUNT(*) FROM {table_name}"
-            )
-
-            count = cursor.fetchone()[0]
-
-            print(f"{table_name}: {count} rows")
-
-    finally:
-        connection.close()
-
-
-# -------------------------------------------------
-# 8. MAIN ETL EXECUTION
-# -------------------------------------------------
 
 def main():
-
-    print("Starting Document Evidence Vault ETL...\n")
-
     extracted = extract_mysql_data()
-
     load_into_snowflake(extracted)
-
-    verify_snowflake_data()
-
-    print("\nETL PROCESS FINISHED.")
+    for tbl, rows in extracted.items():
+        print(f"{tbl}: {len(rows)} rows synced")
 
 
 if __name__ == "__main__":

@@ -48,6 +48,77 @@ def get_document(document_id: int):
     finally:
         connection.close()
 
+def get_document_version(document_id: int, version_id: str):
+    """
+    Retrieve one exact version belonging to a document.
+    The version ID must match a row in document_versions.
+    """
+    connection = get_connection()
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute(
+            """
+            SELECT
+                id,
+                document_id,
+                s3_version_id,
+                original_filename,
+                content_type,
+                file_size_bytes,
+                sha256_checksum,
+                created_at
+            FROM document_versions
+            WHERE document_id = %s
+              AND s3_version_id = %s
+            LIMIT 1
+            """,
+            (document_id, version_id)
+        )
+
+        return cursor.fetchone()
+
+    finally:
+        connection.close()
+
+
+def get_latest_document_version(document_id: int):
+    """
+    Retrieve the most recently inserted version for a document.
+
+    Auto-incrementing ID is used as the ordering source because
+    created_at may contain timestamps written in different time zones.
+    """
+    connection = get_connection()
+
+    try:
+        cursor = connection.cursor(dictionary=True)
+
+        cursor.execute(
+            """
+            SELECT
+                id,
+                document_id,
+                s3_version_id,
+                original_filename,
+                content_type,
+                file_size_bytes,
+                sha256_checksum,
+                created_at
+            FROM document_versions
+            WHERE document_id = %s
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (document_id,)
+        )
+
+        return cursor.fetchone()
+
+    finally:
+        connection.close()
+
 
 def save_recovery_version(
     document_id: int,
@@ -57,11 +128,38 @@ def save_recovery_version(
     size: int,
     checksum: str
 ):
+    """
+    Atomically record a recovered S3 version and update document metadata.
+
+    The document row is locked before inserting the version.
+    Timestamps are written in UTC.
+    """
     connection = get_connection()
+    cursor = None
 
     try:
+        connection.start_transaction()
         cursor = connection.cursor()
 
+        # Confirm the document exists and lock it during this transaction.
+        cursor.execute(
+            """
+            SELECT id
+            FROM documents
+            WHERE id = %s
+            FOR UPDATE
+            """,
+            (document_id,)
+        )
+
+        document = cursor.fetchone()
+
+        if document is None:
+            raise ValueError(
+                f"Document {document_id} does not exist."
+            )
+
+        # Record the exact S3 version that was recovered.
         cursor.execute(
             """
             INSERT INTO document_versions (
@@ -73,7 +171,7 @@ def save_recovery_version(
                 sha256_checksum,
                 created_at
             )
-            VALUES (%s, %s, %s, %s, %s, %s, NOW())
+            VALUES (%s, %s, %s, %s, %s, %s, UTC_TIMESTAMP())
             """,
             (
                 document_id,
@@ -85,6 +183,7 @@ def save_recovery_version(
             )
         )
 
+        # Update the current document metadata.
         cursor.execute(
             """
             UPDATE documents
@@ -112,8 +211,10 @@ def save_recovery_version(
         raise
 
     finally:
-        connection.close()
+        if cursor is not None:
+            cursor.close()
 
+        connection.close()
 
 
 def create_drill_table():
@@ -248,7 +349,7 @@ def get_drill_history():
             """
             SELECT *
             FROM dr_drills
-            ORDER BY created_at DESC
+            ORDER BY id DESC
             LIMIT 100
             """
         )
@@ -389,6 +490,8 @@ def get_recovery_manifests():
     finally:
         connection.close()
 
+
+
 def create_metrics_table():
     connection = get_connection()
 
@@ -405,11 +508,48 @@ def create_metrics_table():
                 estimated_rpo_seconds DOUBLE NULL,
                 replication_status VARCHAR(30) NOT NULL,
                 replication_observation_seconds DOUBLE NULL,
+                recovery_rto_seconds DOUBLE NULL,
+                drill_duration_seconds DOUBLE NULL,
+                replication_timed_out BOOLEAN NOT NULL DEFAULT FALSE,
+                replication_error_code VARCHAR(100) NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
 
+        cursor.execute("""
+            SELECT COLUMN_NAME
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'dr_metrics'
+        """)
+
+        existing_columns = {
+            row[0] for row in cursor.fetchall()
+        }
+
+        migrations = {
+            "recovery_rto_seconds":
+                "ALTER TABLE dr_metrics ADD COLUMN recovery_rto_seconds DOUBLE NULL",
+
+            "drill_duration_seconds":
+                "ALTER TABLE dr_metrics ADD COLUMN drill_duration_seconds DOUBLE NULL",
+
+            "replication_timed_out":
+                "ALTER TABLE dr_metrics ADD COLUMN replication_timed_out BOOLEAN NOT NULL DEFAULT FALSE",
+
+            "replication_error_code":
+                "ALTER TABLE dr_metrics ADD COLUMN replication_error_code VARCHAR(100) NULL"
+        }
+
+        for column, sql in migrations.items():
+            if column not in existing_columns:
+                cursor.execute(sql)
+
         connection.commit()
+
+    except Exception:
+        connection.rollback()
+        raise
 
     finally:
         connection.close()
@@ -421,6 +561,11 @@ def save_dr_metrics(metrics):
     try:
         cursor = connection.cursor()
 
+        recovery_rto = metrics.get(
+            "recovery_rto_seconds",
+            metrics["recovery_workflow_seconds"]
+        )
+
         cursor.execute("""
             INSERT INTO dr_metrics (
                 document_id,
@@ -429,17 +574,27 @@ def save_dr_metrics(metrics):
                 recovery_workflow_seconds,
                 estimated_rpo_seconds,
                 replication_status,
-                replication_observation_seconds
+                replication_observation_seconds,
+                recovery_rto_seconds,
+                drill_duration_seconds,
+                replication_timed_out,
+                replication_error_code
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            VALUES (
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            )
         """, (
             metrics["document_id"],
             metrics["failure_type"],
             metrics["recovered_version_id"],
-            metrics["recovery_workflow_seconds"],
+            recovery_rto,
             metrics.get("estimated_rpo_seconds"),
             metrics["replication_status"],
-            metrics.get("replication_observation_seconds")
+            metrics.get("replication_observation_seconds"),
+            recovery_rto,
+            metrics.get("drill_duration_seconds"),
+            metrics.get("replication_timed_out", False),
+            metrics.get("replication_error_code")
         ))
 
         connection.commit()
@@ -450,7 +605,6 @@ def save_dr_metrics(metrics):
 
     finally:
         connection.close()
-
 
 def get_dr_metrics():
     connection = get_connection()
@@ -469,5 +623,35 @@ def get_dr_metrics():
 
     finally:
         connection.close()
-
+def get_all_active_documents():
+    connection = get_connection()
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(
+            """
+            SELECT
+                d.id,
+                d.original_filename,
+                d.storage_key,
+                d.category,
+                d.file_size_bytes,
+                d.sha256_checksum,
+                d.status,
+                d.created_at,
+                (
+                    SELECT dv.s3_version_id
+                    FROM document_versions dv
+                    WHERE dv.document_id = d.id
+                    ORDER BY dv.id DESC
+                    LIMIT 1
+                ) AS latest_s3_version_id
+            FROM documents d
+            WHERE d.status IN ('ACTIVE', 'CORRUPTED')
+            ORDER BY d.id DESC
+            LIMIT 100
+            """
+        )
+        return cursor.fetchall()
+    finally:
+        connection.close()
 
