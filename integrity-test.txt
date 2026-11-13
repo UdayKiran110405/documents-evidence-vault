@@ -1,5 +1,0 @@
-Document Evidence Vault
-Controlled Integrity Testing
-Test ID: 88cff273-ea91-4505-b2fd-58dda4480a39
-Created: 2026-11-11 18:01:28
-This file is used exclusively for integrity failure testing.
